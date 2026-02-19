@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EffectualL-3D Sandbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- GLTFLoader for user uploads -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background: #0f172a; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        code { font-family: 'Fira Code', monospace; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <!-- UI Overlay -->
+    <div class="fixed top-4 left-4 w-72 glass rounded-2xl p-5 text-white shadow-2xl z-10 max-h-[90vh] overflow-y-auto custom-scroll">
+        <h1 class="text-xl font-bold mb-4 flex items-center gap-2">
+            <span class="text-blue-400">EL</span> EffectualL-Sandbox
+        </h1>
+
+        <!-- Model Selection -->
+        <section class="mb-6">
+            <label class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2 block">Available Models</label>
+            <div class="grid grid-cols-1 gap-2">
+                <button onclick="loadModel('microscope')" class="model-btn w-full bg-slate-700 hover:bg-blue-600 transition p-2 rounded-lg text-sm text-left px-4">Microscope</button>
+                <button onclick="loadModel('plantCell')" class="model-btn w-full bg-slate-700 hover:bg-blue-600 transition p-2 rounded-lg text-sm text-left px-4">Plant Cell</button>
+                <button onclick="loadModel('onionCell')" class="model-btn w-full bg-slate-700 hover:bg-blue-600 transition p-2 rounded-lg text-sm text-left px-4">Onion Cell</button>
+                <button onclick="loadModel('cube')" class="model-btn w-full bg-slate-700 hover:bg-blue-600 transition p-2 rounded-lg text-sm text-left px-4">Basic Cube</button>
+            </div>
+            
+            <div class="mt-3">
+                <label for="file-upload" class="flex items-center justify-center w-full p-2 border-2 border-dashed border-slate-600 rounded-lg cursor-pointer hover:border-blue-400 transition">
+                    <span class="text-xs">Upload GLB (< 1MB)</span>
+                    <input id="file-upload" type="file" class="hidden" accept=".glb,.gltf" onchange="handleFileUpload(event)" />
+                </label>
+            </div>
+        </section>
+
+        <!-- Camera Settings -->
+        <section class="mb-6 space-y-3">
+            <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold uppercase tracking-wider text-gray-400 block">Camera Mode</label>
+                <button onclick="showCameraCode()" class="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded hover:bg-blue-500/40 transition">View Code</button>
+            </div>
+            <select id="camera-select" onchange="updateCameraType()" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-sm outline-none">
+                <option value="perspective">Perspective</option>
+                <option value="orthographic">Orthographic</option>
+            </select>
+        </section>
+
+        <!-- Lighting & Environment -->
+        <section class="mb-6 space-y-4">
+            <div>
+                <label class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2 block">Environment</label>
+                <select id="env-select" onchange="updateEnv()" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-sm outline-none">
+                    <option value="sky">Clear Sky</option>
+                    <option value="city">Dark City</option>
+                    <option value="park">Garden Green</option>
+                    <option value="void">Deep Void</option>
+                </select>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <span class="text-sm">Ambient Light</span>
+                <input type="checkbox" id="ambient-toggle" checked onclick="toggleLights()" class="w-4 h-4">
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm">Directional Light</span>
+                <input type="checkbox" id="dir-toggle" checked onclick="toggleLights()" class="w-4 h-4">
+            </div>
+        </section>
+
+        <!-- Helpers -->
+        <section class="mb-6 space-y-2">
+            <label class="text-xs font-semibold uppercase tracking-wider text-gray-400 block">Visual Aids</label>
+            <div class="flex items-center justify-between">
+                <span class="text-sm">Grid Helper</span>
+                <input type="checkbox" id="grid-toggle" checked onclick="toggleHelpers()" class="w-4 h-4">
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm">Axis Helper</span>
+                <input type="checkbox" id="axis-toggle" checked onclick="toggleHelpers()" class="w-4 h-4">
+            </div>
+        </section>
+
+        <div id="status-msg" class="text-[10px] text-gray-500 italic mt-4">Scene Ready.</div>
+    </div>
+
+    <!-- Code Modal -->
+    <div id="code-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-6">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+                <h2 id="modal-title" class="text-white font-bold text-lg">Three.js Snippet</h2>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            <div class="p-4 overflow-y-auto bg-slate-950">
+                <pre id="code-block" class="text-blue-300 text-xs leading-relaxed"></pre>
+            </div>
+            <div class="p-4 bg-slate-800 text-right border-t border-slate-700">
+                <button onclick="closeModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-sm transition">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, currentMesh, gridHelper, axisHelper;
+        let ambientLight, directionalLight;
+        let cameraType = 'perspective';
+        const loader = new THREE.GLTFLoader();
+
+        function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Set up Camera
+            updateCameraType();
+
+            // Lighting
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 10, 7);
+            scene.add(directionalLight);
+
+            // Helpers
+            gridHelper = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
+            scene.add(gridHelper);
+
+            axisHelper = new THREE.AxesHelper(3);
+            scene.add(axisHelper);
+
+            // Controls (Simple Mouse Orbit)
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            
+            renderer.domElement.addEventListener('mousedown', () => isDragging = true);
+            renderer.domElement.addEventListener('mouseup', () => isDragging = false);
+            renderer.domElement.addEventListener('mousemove', (e) => {
+                if(isDragging) {
+                    const deltaMove = { x: e.offsetX - previousMousePosition.x, y: e.offsetY - previousMousePosition.y };
+                    scene.rotation.y += deltaMove.x * 0.01;
+                    scene.rotation.x += deltaMove.y * 0.01;
+                }
+                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+            });
+
+            // Handle Resize
+            window.addEventListener('resize', () => {
+                const aspect = window.innerWidth / window.innerHeight;
+                if (cameraType === 'perspective') {
+                    camera.aspect = aspect;
+                } else {
+                    const size = 5;
+                    camera.left = -size * aspect;
+                    camera.right = size * aspect;
+                    camera.top = size;
+                    camera.bottom = -size;
+                }
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // Initial Model
+            loadModel('microscope');
+            animate();
+        }
+
+        function updateCameraType() {
+            cameraType = document.getElementById('camera-select').value;
+            const aspect = window.innerWidth / window.innerHeight;
+            const oldPos = camera ? camera.position.clone() : new THREE.Vector3(5, 5, 5);
+
+            if (cameraType === 'perspective') {
+                camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+            } else {
+                const size = 5;
+                camera = new THREE.OrthographicCamera(
+                    -size * aspect, size * aspect,
+                    size, -size,
+                    0.1, 1000
+                );
+            }
+            
+            camera.position.copy(oldPos);
+            camera.lookAt(0, 0, 0);
+            updateStatus(`Camera: ${cameraType}`);
+        }
+
+        function showCameraCode() {
+            const title = cameraType === 'perspective' ? 'Perspective Camera Setup' : 'Orthographic Camera Setup';
+            let code = '';
+
+            if (cameraType === 'perspective') {
+                code = `// Initialize Perspective Camera
+const fov = 75;
+const aspect = window.innerWidth / window.innerHeight;
+const near = 0.1;
+const far = 1000;
+
+const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+camera.position.set(5, 5, 5);
+camera.lookAt(0, 0, 0);`;
+            } else {
+                code = `// Initialize Orthographic Camera
+const aspect = window.innerWidth / window.innerHeight;
+const frustumSize = 5;
+
+const camera = new THREE.OrthographicCamera(
+    -frustumSize * aspect, 
+     frustumSize * aspect,
+     frustumSize, 
+    -frustumSize,
+     0.1, 
+     1000
+);
+camera.position.set(5, 5, 5);
+camera.lookAt(0, 0, 0);`;
+            }
+
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('code-block').innerText = code;
+            document.getElementById('code-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('code-modal').classList.add('hidden');
+        }
+
+        function createMicroscope() {
+            const group = new THREE.Group();
+            const base = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 1.5), new THREE.MeshStandardMaterial({color: 0x334155}));
+            base.position.y = 0.1;
+            group.add(base);
+            const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 2), new THREE.MeshStandardMaterial({color: 0x475569}));
+            arm.position.set(-0.7, 1, 0);
+            arm.rotation.z = Math.PI * 0.1;
+            group.add(arm);
+            const head = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.8), new THREE.MeshStandardMaterial({color: 0x94a3b8}));
+            head.position.set(0, 1.8, 0);
+            group.add(head);
+            const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.4), new THREE.MeshStandardMaterial({color: 0x1e293b}));
+            lens.position.set(0, 1.4, 0);
+            group.add(lens);
+            return group;
+        }
+
+        function createPlantCell() {
+            const group = new THREE.Group();
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 1.5), new THREE.MeshStandardMaterial({color: 0x22c55e, transparent: true, opacity: 0.4}));
+            group.add(wall);
+            const vac = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), new THREE.MeshStandardMaterial({color: 0x38bdf8}));
+            vac.position.set(0.2, 0, 0);
+            group.add(vac);
+            const nuc = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 16), new THREE.MeshStandardMaterial({color: 0x7c3aed}));
+            nuc.position.set(-0.6, 0.5, 0.2);
+            group.add(nuc);
+            return group;
+        }
+
+        function createOnionCell() {
+            const group = new THREE.Group();
+            for(let i = -1; i <= 1; i++) {
+                const cell = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 1.5, 4, 8), new THREE.MeshStandardMaterial({color: 0xfbcfe8}));
+                cell.position.x = i * 0.9;
+                cell.rotation.z = Math.PI / 2;
+                group.add(cell);
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshStandardMaterial({color: 0x86198f}));
+                dot.position.set(i * 0.9, 0.1, 0.1);
+                group.add(dot);
+            }
+            return group;
+        }
+
+        function loadModel(type) {
+            if (currentMesh) scene.remove(currentMesh);
+            switch(type) {
+                case 'microscope': currentMesh = createMicroscope(); break;
+                case 'plantCell': currentMesh = createPlantCell(); break;
+                case 'onionCell': currentMesh = createOnionCell(); break;
+                case 'cube': currentMesh = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshStandardMaterial({color: 0x3b82f6})); break;
+            }
+            scene.add(currentMesh);
+            updateStatus(`Loaded: ${type}`);
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (file.size > 1024 * 1024) {
+                updateStatus("Error: File exceeds 1MB", true);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                loader.parse(contents, '', (gltf) => {
+                    if (currentMesh) scene.remove(currentMesh);
+                    currentMesh = gltf.scene;
+                    const box = new THREE.Box3().setFromObject(currentMesh);
+                    const size = box.getSize(new THREE.Vector3()).length();
+                    const scale = 3 / size;
+                    currentMesh.scale.set(scale, scale, scale);
+                    scene.add(currentMesh);
+                    updateStatus(`Custom model loaded: ${file.name}`);
+                }, (err) => {
+                    updateStatus("Load Error: Invalid GLB/GLTF", true);
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function updateEnv() {
+            const val = document.getElementById('env-select').value;
+            const colors = { sky: 0x87ceeb, city: 0x1e293b, park: 0x064e3b, void: 0x000000 };
+            scene.background = new THREE.Color(colors[val] || 0x0f172a);
+        }
+
+        function toggleLights() {
+            ambientLight.visible = document.getElementById('ambient-toggle').checked;
+            directionalLight.visible = document.getElementById('dir-toggle').checked;
+        }
+
+        function toggleHelpers() {
+            gridHelper.visible = document.getElementById('grid-toggle').checked;
+            axisHelper.visible = document.getElementById('axis-toggle').checked;
+        }
+
+        function updateStatus(msg, isError = false) {
+            const el = document.getElementById('status-msg');
+            el.innerText = msg;
+            el.style.color = isError ? '#ef4444' : '#94a3b8';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (currentMesh) currentMesh.rotation.y += 0.005;
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
